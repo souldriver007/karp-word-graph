@@ -2,6 +2,7 @@ node_modules/
 dist/
 snapshots/
 .claude/
+.karp-inspector/
 *.db
 auth.json
 .karp-graph-lite/
