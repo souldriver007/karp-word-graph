@@ -3,6 +3,21 @@ dist/
 snapshots/
 .claude/
 .karp-inspector/
+.karp-graph-lite/
 *.db
 auth.json
-.karp-graph-lite/
+
+# OS files
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# Build artifacts
+*.mcpb
+*.tgz

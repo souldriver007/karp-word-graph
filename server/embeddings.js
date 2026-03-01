@@ -1,10 +1,10 @@
 // ============================================================================
-// KARP Graph Lite — Embeddings Layer (transformers.js)
+// KARP Word Graph — Embeddings Layer (transformers.js)
 // Version: 1.0.0
 // Author: SoulDriver (Adelaide, Australia)
 // Description: Semantic embedding using BGE-small-en-v1.5 via transformers.js.
-//              Same model as Inspector Lite — ONNX runtime, no Python needed.
-//              Downloads model on first run (~130MB), cached locally after.
+//              Handles both knowledge graph nodes AND scripture passages.
+//              ONNX runtime, no Python needed.
 // License: MIT
 // ============================================================================
 

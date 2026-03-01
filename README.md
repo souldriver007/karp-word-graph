@@ -1,393 +1,218 @@
-# KARP Graph Lite
+# KARP Word Graph
 
-**A self-evolving personal knowledge graph for Claude Desktop.**
+**Scripture study system for Claude Desktop.**
 
-Built by [SoulDriver](https://souldriver.com.au) — Adelaide, Australia.
+Search the Scriptures with semantic AI — find passages by meaning, not just keywords. Keep study notes, prayer journals, and memory verses in a personal knowledge graph. Everything runs locally on your machine.
 
----
-
-## What Is This?
-
-KARP Graph Lite is an MCP (Model Context Protocol) extension that gives Claude Desktop persistent, structured memory with semantic search. It runs as a local Node.js server, stores everything in a portable SQLite database on the user's machine, and serves a web UI for browsing, editing, and visualizing the knowledge graph.
-
-The user installs it as a `.mcpb` bundle through Claude Desktop's extension system. No config files, no API keys, no cloud services. Unpack, install, done.
-
-**One sentence:** Claude gets a brain that remembers across conversations, and the user gets a visual dashboard to see and manage everything Claude remembers.
+> *"Search the scriptures; for in them ye think ye have eternal life: and they are they which testify of me."* — John 5:39
 
 ---
 
-## Why Does This Exist?
+## What's Inside
 
-Claude Desktop has a built-in memory system, but it's a black box. Users can't see what's stored, can't edit it, can't export it, can't structure it, and can't evolve it. Graph Lite fixes all of that:
+- **31,102 verses** — Complete KJV Bible, pre-loaded and ready
+- **15,857 semantic embeddings** — Find passages by concept, not just words
+- **18 MCP tools** — Read, search, study, annotate, connect
+- **Personal knowledge graph** — Study notes, prayers, questions, insights, memory verses
+- **Web UI** — Visual graph at `localhost:3457`
+- **Zero cloud dependencies** — All data stays on your machine
 
-| Claude's Built-in Memory | KARP Graph Lite |
-|--------------------------|-----------------|
-| Black box — user can't see what's stored | Transparent — full web UI, every node visible |
-| Unstructured text blobs | Typed nodes: memory, todo, decision, insight, etc. |
-| No editing or deletion | Full CRUD — create, read, update, delete |
-| No export | Export to JSON, SQLite backup, snapshots |
-| No connections between memories | Named relationships: `led_to`, `contradicts`, `part_of` |
-| No search beyond keyword | Semantic search using vector embeddings |
-| Fixed schema | Self-evolving — user adds custom types through conversation |
-| Cloud-dependent | 100% local, works offline, user owns the file |
+## Install
 
----
+1. Open **Claude Desktop**
+2. Go to **Settings → Extensions → Install Extension**
+3. Select the `karp-word-graph.mcpb` file
+4. **Done.** The KJV Bible is pre-loaded with semantic search ready.
 
-## Security
+No configuration needed. No data folder to pick. No setup steps.
 
-### Overview
+## How It Works
 
-KARP Graph Lite is a local-first tool. Your data never leaves your machine. There is no cloud sync, no telemetry, no analytics, no external API calls (except the one-time embedding model download on first run).
-
-### Web UI Protection
-
-The web UI runs on `localhost:3456` and is protected by a passphrase-based session authentication system:
-
-- **Three-layer auth priority:** (1) `UI_PASSWORD` environment variable → (2) Saved passphrase in `auth.json` → (3) First-run setup screen.
-- **First-run setup** — If no password is configured, the web UI shows a mandatory setup screen on first visit. Users must either set a passphrase or explicitly choose "Trust This Network" before they can access the dashboard. The UI cannot be used without making a conscious security decision.
-- **Persistent config** — Auth settings are saved to `auth.json` in the data folder. Once set, they persist across server restarts and extension reinstalls.
-- **Password hashing** — Passphrases are hashed using Node.js built-in `crypto.scrypt` (no external dependencies).
-- **Session cookies** — After successful login, a session cookie is set. Choose "Remember this device" for a 30-day session, or leave unchecked for a 24-hour session that expires when you close your browser.
-- **Express middleware** — All `/api/*` routes are protected. Unauthenticated requests receive a `401` response. During first-run setup, only auth endpoints are accessible.
-- **Settings page** — Change your passphrase or switch from trust mode to password mode at any time via Settings → Security.
-- **MCP tools are unaffected** — Claude Desktop communicates via stdio (standard input/output), not HTTP. The passphrase only protects the web UI, not Claude's ability to use the knowledge graph tools.
-
-### Network Safety
-
-- The Express server binds to `127.0.0.1` (localhost only). It is not accessible from other devices on your network by default.
-- **Shared/public networks**: If your machine's firewall allows inbound connections on port 3456, other devices on the same network could potentially access the UI. Always set a passphrase if you're on a shared or public network.
-- The "Remember this device" checkbox should **only** be used on a trusted personal computer.
-
-### Data at Rest
-
-- `graph.db` is a **plain unencrypted SQLite file**. Anyone with access to the file can read its contents.
-- Store your data folder in a location with appropriate file system permissions.
-- **Do not store passwords, API keys, credit card numbers, or other secrets** in the knowledge graph. It is designed for notes, insights, decisions, and structured knowledge — not credential storage.
-- Snapshots (backups) are also unencrypted SQLite copies in the `snapshots/` subfolder.
-
-### Embedding Model
-
-- The BGE-small-en-v1.5 model (~130MB) is downloaded once from Hugging Face on first run and cached in your data folder under `models/`.
-- After the initial download, no further network requests are made by the extension.
-
-### What We Don't Collect
-
-- No usage analytics
-- No crash reporting
-- No telemetry
-- No user data transmission
-- No cloud accounts required
-
-Your knowledge graph is yours. Period.
-
----
-
-## Architecture
-
-### Technology Stack
-
-| Component | Technology | Why |
-|-----------|-----------|-----|
-| Runtime | Node.js (Claude Desktop's built-in) | Zero installation required |
-| MCP Server | Custom stdio handler | Direct protocol implementation, no framework overhead |
-| Database | sql.js (SQLite compiled to WebAssembly) | Universal compatibility — no native module compilation. We originally used better-sqlite3 but it crashes in Claude Desktop's bundled Node.js due to ABI mismatch |
-| Embeddings | @xenova/transformers + BGE-small-en-v1.5 | 384-dimension vectors, ONNX runtime, ~130MB model cached locally |
-| Web UI | Express serving a single HTML file | Dashboard, browse, D3 graph visualization, type manager, settings |
-| Auth | Node.js crypto.scrypt | Passphrase hashing with zero external dependencies |
-| Package | .mcpb bundle (ZIP with manifest) | Claude Desktop's native extension format |
-
-### File Structure
+On first startup, the server copies the pre-loaded scripture database to:
 
 ```
-karp-graph-lite/
-├── package.json              # Dependencies: sql.js, @xenova/transformers, express
-├── config/
-│   └── manifest.json         # MCP extension manifest — tools, user config, metadata
-├── server/
-│   ├── index.js              # MCP protocol handler + Express web server + tool router
-│   ├── database.js           # sql.js wrapper — schema, CRUD, migrations, snapshots
-│   ├── embeddings.js         # BGE-small via transformers.js — embed, similarity
-│   ├── search.js             # Semantic search, keyword search, re-embed pipeline
-│   └── auth.js               # Passphrase auth, session management, Express middleware
-├── ui/
-│   └── index.html            # Single-file web UI (CSS + JS inline, D3.js for graph)
-├── assets/
-│   └── icon.png              # SoulDriver extension icon
-├── scripts/
-│   └── build_mcpb.js         # Bundle builder — stages, installs prod deps, zips
-└── dist/
-    └── karp-graph-lite.mcpb  # Distributable bundle
+~/.karp-word-graph/graph.db
 ```
 
-### Data Storage (User's Machine)
+This is where your data lives — scripture, embeddings, study notes, everything. This file is **yours**. Back it up, move it, keep it safe.
+
+- **Windows:** `C:\Users\YourName\.karp-word-graph\graph.db`
+- **macOS:** `/Users/YourName/.karp-word-graph/graph.db`
+- **Linux:** `/home/YourName/.karp-word-graph/graph.db`
+
+## Quick Start — What To Say To Claude
+
+Once installed, just talk to Claude naturally:
+
+| You say | Claude uses |
+|---------|-----------|
+| "Read John 3:16" | `read_scripture` |
+| "Read Psalm 23" | `read_scripture` |
+| "Read Matthew 5:3-12" | `read_scripture` |
+| "Find verses about hope in suffering" | `search_scripture` |
+| "Find Old Testament prophecies about the messiah" | `search_scripture` (with OT filter) |
+| "Let's study Romans 8:28 in depth" | `study_passage` |
+| "Save a note on this passage" | `remember` (type: study_note) |
+| "Log a prayer about this" | `remember` (type: prayer) |
+| "I want to memorize this verse" | `remember` (type: memory_verse) |
+| "What have I been studying lately?" | `study_history` |
+| "Find my notes about sovereignty" | `recall` |
+| "How many books are in the Bible?" | `list_books` |
+| "Is everything loaded correctly?" | `scripture_status` |
+
+## Dedicated Study Mode — Claude Projects
+
+Out of the box, Claude treats Word Graph as one set of tools among many. To make Scripture study the **focus**, create a Claude Project. This gives Claude a persistent set of instructions so every conversation opens in study mode — it will check your history, remember your journey, and meet you where you left off.
+
+### Setup (one time, takes 30 seconds)
+
+1. **Create a new Project** — click **Projects → Create Project**. Give it a name like `KARP Word Graph` or `Bible Study`. In the "What do you want to achieve?" box, write a short note like `Bible Study` or `Scripture research`.
+2. **Click Create.**
+3. **Add project instructions** — inside the project, click the **+ Project instructions** button and paste the example prompt below.
+4. **Say hello!** Start a new conversation inside the project and greet Claude. It will check your study history and pick up right where you left off.
+
+### Example Project Prompt
+
+Copy and paste this into your project instructions:
 
 ```
-[user-chosen-folder]/
-├── graph.db                  # SQLite database (single file, portable)
-├── snapshots/                # Auto and manual backups (SQLite copies)
-└── models/                   # Cached BGE-small embedding model (~130MB)
+You are a Bible study companion. KARP Word Graph is your primary toolset
+— the complete KJV Bible with semantic search and a personal knowledge graph.
+
+At the start of each conversation, check study_history to pick up where
+the user left off. If the graph is empty, welcome them and ask what
+brings them to the Word today.
+
+Match the user's level from their language. Scripture first, commentary
+second. Let the text breathe.
 ```
 
-The user chooses where this lives during installation. It's a single SQLite file. Copy it anywhere, back it up, share it. Zero lock-in. Data persists across extension reinstalls and updates.
+### Make It Yours
+
+The prompt above is just a starting point. Add a line to customise the experience:
+
+- *"Keep the pace slow and devotional. Ask what stands out to me before commenting."*
+- *"I'm a seminary student. Go deep — original context, literary structure, cross-testament echoes."*
+- *"I'm preparing a sermon series on Romans. Help me find illustrations."*
+- *"I'm brand new to the Bible. Start simple and guide me gently."*
 
 ---
 
-## MCP Tools (What Claude Sees)
+## Tools Reference
 
-Claude Desktop registers these 11 tools when the extension loads:
+### Scripture Tools (7)
 
-### Knowledge Operations
+| Tool | What it does |
+|------|-------------|
+| `read_scripture` | Read verses by reference — "John 3:16", "Genesis 1:1-5", "Psalm 23" |
+| `search_scripture` | Semantic search — finds passages by meaning across all 31,102 verses |
+| `study_passage` | Deep study — verse text, surrounding context, your linked notes |
+| `study_history` | Review your study activity — notes, prayers, questions, memory verses |
+| `scripture_status` | Health check — verse counts, embedding coverage, study stats |
+| `list_books` | All 66 books with chapter/verse counts. Filter by OT or NT |
+| `re_embed_scriptures` | Rebuild passage embeddings (only needed if you modify the database) |
 
-| Tool | Purpose | Key Behavior |
-|------|---------|-------------|
-| `remember` | Store a new node | Accepts type, summary, detail, tags, importance, metadata. Auto-embeds for semantic search. Optional `connect_to` creates an edge in the same call. |
-| `recall` | Semantic search | Embeds the query, compares against all stored vectors using cosine similarity. Returns ranked results with similarity scores. Finds by meaning, not keywords. |
-| `forget` | Delete a node | Cascades: removes the node, its embedding, and all connected edges. Permanent. |
-| `update` | Edit a node | Partial updates — only provided fields change. Metadata merges with existing. Auto re-embeds after update. |
-| `connect` | Link two nodes | Named relationship (e.g. `led_to`, `contradicts`, `part_of`, `inspired_by`). Creates a directional edge. |
-| `search` | Keyword search | LIKE-based search across summary, detail, context fields. Faster than recall but less intelligent. |
-| `list` | Browse nodes | Filter by type, tags. Sort by created, updated, importance. Pagination via limit/offset. |
+### Knowledge Graph Tools (11)
 
-### Meta / Health Operations
+| Tool | What it does |
+|------|-------------|
+| `remember` | Save study notes, prayers, insights, questions, cross-references, memory verses |
+| `recall` | Semantic search across your personal notes and study history |
+| `search` | Keyword search across your notes |
+| `list` | Browse notes by type, date, or importance |
+| `update` | Edit an existing note |
+| `connect` | Link two notes together (e.g. prayer "inspired_by" study note) |
+| `forget` | Delete a note |
+| `kg_status` | Graph health — node counts, DB size, embedding coverage |
+| `propose_node_type` | Create custom note types (approved in web UI) |
+| `snapshot` | Backup your entire database |
+| `re_embed` | Rebuild knowledge graph embeddings |
 
-| Tool | Purpose |
-|------|---------|
-| `kg_status` | Full health report: node counts by type, DB size, embedding coverage, available types, pending proposals, snapshot count |
-| `propose_node_type` | Claude proposes a new custom type with field definitions. User approves in the web UI. Auto-snapshot before migration. |
-| `snapshot` | Manual backup of the entire database. Auto-prunes to keep 20 most recent. |
-| `re_embed` | Rebuild all vector embeddings. Used after adding new types or if search quality degrades. |
+### Study Note Types
 
----
-
-## Self-Evolving Schema
-
-This is Graph Lite's defining feature. The knowledge graph ships with 6 base types, but users can add unlimited custom types through natural conversation with Claude.
-
-### Base Types (Shipped)
-
-| Type | Icon | Purpose |
+| Type | Icon | Use for |
 |------|------|---------|
-| `memory` | 💭 | Personal reflections, wisdom, notes, letters |
-| `todo` | ✅ | Tasks with status tracking |
-| `decision` | ⚖️ | Choices made and their rationale |
-| `insight` | 💡 | Patterns noticed, learnings, observations |
-| `dev_session` | 🔧 | Structured daily work logs |
-| `changelog` | 📋 | Versioned release notes |
-
-### Custom Type Creation Flow
-
-```
-1. User and Claude are chatting naturally
-2. They realize a new type would be useful
-   Example: "I keep tracking recipes, can we make that a proper type?"
-
-3. Claude calls propose_node_type:
-   → type_name: "recipe"
-   → display_name: "Recipe"  
-   → icon: "🍳"
-   → fields: [name, ingredients[], method, cuisine, prep_time, rating]
-
-4. Proposal appears in the web UI as a banner
-   → User reviews fields and clicks [Approve] or [Reject]
-
-5. On approval:
-   a. Auto-snapshot taken (safety net)
-   b. Type definition added to type_definitions table
-   c. Migration logged in migrations table
-   d. Claude immediately has the new type available
-   e. UI updates with new filter option
-
-6. Claude can now: remember type="recipe" summary="Nonna's carbonara" ...
-```
-
-### What This Means
-
-Every user's knowledge graph becomes unique to their life and work:
-
-- A **developer** has dev_session, changelog (base) + maybe `architecture_decision`, `bug_report`
-- A **chef** has memory, insight (base) + `recipe`, `ingredient_note`, `menu_plan`
-- A **lawyer** has decision, todo (base) + `case_brief`, `client_note`, `precedent`
-- A **teacher** has insight, todo (base) + `lesson_plan`, `student_note`, `curriculum_map`
-- A **researcher** has insight, decision (base) + `hypothesis`, `experiment`, `literature_note`
-
-Same engine, infinite shapes. Schema evolution negotiated in natural language — no database knowledge required.
-
----
-
-## Database Schema
-
-All nodes share a single `nodes` table. Type-specific fields go in the JSON `metadata` column. This avoids table-per-type sprawl while keeping queries simple.
-
-```sql
-CREATE TABLE nodes (
-    id TEXT PRIMARY KEY,
-    type TEXT NOT NULL,
-    summary TEXT NOT NULL,
-    detail TEXT DEFAULT '',
-    context TEXT DEFAULT '',
-    tags TEXT DEFAULT '[]',
-    importance REAL DEFAULT 0.5,
-    created_at REAL NOT NULL,
-    updated_at REAL NOT NULL,
-    metadata TEXT DEFAULT '{}'
-);
-
-CREATE TABLE edges (
-    id TEXT PRIMARY KEY,
-    source_id TEXT NOT NULL,
-    target_id TEXT NOT NULL,
-    relationship TEXT NOT NULL,
-    created_at REAL NOT NULL,
-    FOREIGN KEY (source_id) REFERENCES nodes(id) ON DELETE CASCADE,
-    FOREIGN KEY (target_id) REFERENCES nodes(id) ON DELETE CASCADE
-);
-
-CREATE TABLE embeddings (
-    node_id TEXT PRIMARY KEY,
-    vector BLOB NOT NULL,
-    model TEXT NOT NULL,
-    embedded_at REAL NOT NULL,
-    FOREIGN KEY (node_id) REFERENCES nodes(id) ON DELETE CASCADE
-);
-
-CREATE TABLE type_definitions (
-    type_name TEXT PRIMARY KEY,
-    display_name TEXT NOT NULL,
-    description TEXT DEFAULT '',
-    fields TEXT NOT NULL DEFAULT '[]',
-    icon TEXT DEFAULT '📝',
-    is_base_type INTEGER DEFAULT 0,
-    created_at REAL NOT NULL
-);
-
-CREATE TABLE pending_proposals (
-    id TEXT PRIMARY KEY,
-    type_name TEXT NOT NULL,
-    display_name TEXT NOT NULL,
-    description TEXT DEFAULT '',
-    fields TEXT NOT NULL DEFAULT '[]',
-    icon TEXT DEFAULT '📝',
-    proposed_at REAL NOT NULL,
-    status TEXT DEFAULT 'pending'
-);
-
-CREATE TABLE migrations (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    type_name TEXT NOT NULL,
-    action TEXT NOT NULL,
-    snapshot_path TEXT,
-    fields_before TEXT,
-    fields_after TEXT,
-    created_at REAL NOT NULL
-);
-```
-
----
-
-## Embedding Pipeline
-
-- **Model:** BGE-small-en-v1.5 via `@xenova/transformers` (ONNX runtime), 384 dimensions
-- **Text preparation:** Node fields concatenated as `[type] | summary | detail | context | Tags: ... | metadata...`, truncated to 2000 chars
-- **Search:** Query embedded → cosine similarity against all stored vectors → ranked results
-- **Auto-embed:** On `remember`, on `update`, on startup (background job for missing vectors), on `re_embed`
-
----
+| `study_note` | 📝 | Personal annotations on passages |
+| `prayer` | 🙏 | Prayer journal entries linked to scripture |
+| `teaching` | 📖 | Sermon notes, Bible study group notes |
+| `cross_ref` | 🔗 | Connections you discover between passages |
+| `question` | ❓ | Questions that arise during study |
+| `memory_verse` | ⭐ | Verses you're memorizing (with progress tracking) |
 
 ## Web UI
 
-Served by Express on `localhost:3456` (configurable). Single HTML file with inline CSS and JavaScript. Protected by passphrase authentication.
+Open `http://localhost:3457` in your browser to see your knowledge graph visually. Protected by passphrase on first visit.
 
-| Page | Purpose |
-|------|---------|
-| **Dashboard** | Stats cards, nodes by type breakdown, recent activity, pending proposal banners |
-| **Browse** | Search bar (semantic + keyword), type filter chips, node cards, detail modal |
-| **Graph** | D3.js force-directed visualization. Nodes colored by type, sized by importance. Click, drag, zoom. |
-| **Types** | Base and custom types, pending proposals with approve/reject, instructions for creating types |
-| **Settings** | Database info, snapshot management, JSON export, security status, link to full KARP platform |
+The port can be changed during installation if 3457 is already in use.
 
----
+## Troubleshooting
 
-## Relationship to Full KARP Platform
+### "Scripture not loaded" or 0 verses showing
 
-KARP Graph Lite is a free consumer tool. The full KARP Research Engine is an enterprise platform:
+The pre-loaded database may not have copied correctly. Check if the file exists:
 
-| Aspect | Graph Lite | Full KARP |
-|--------|-----------|-----------|
-| Embeddings | BGE-small (384d), local | BGE-large (1024d), server-side |
-| Vector Storage | sql.js (SQLite WASM) | Enterprise-grade vector storage |
-| AI Models | Claude Desktop (single model) | 4 frontier models (Claude, GPT, Gemini, Grok) |
-| Architecture | Single-user, local file | Multi-tenant, cloud, JWT auth, subscriptions |
-| Use Case | Personal memory & notes | Institutional-grade research, 13-turn deliberation |
-| Price | Free | Subscription tiers (PAYG to Enterprise) |
-
-Graph Lite is the free personal edition of the KARP knowledge graph architecture — the same design principles, scaled for individual use.
-
----
-
-## Product Family
-
-1. **KARP Inspector Lite** — Semantic codebase search for Claude Desktop
-2. **KARP Graph Lite** — Personal knowledge graph for Claude Desktop (this project)
-3. **Full KARP Platform** — Multi-AI deliberation engine at [souldriver.com.au](https://souldriver.com.au)
-
----
-
-## Key Engineering Decisions
-
-### sql.js over better-sqlite3
-
-better-sqlite3 is a native C++ module that crashes in Claude Desktop's bundled Node.js due to ABI mismatch. Replaced with sql.js (SQLite compiled to WebAssembly) for universal compatibility. Trade-off: manual save-to-disk via debounced writes every 2 seconds.
-
-### Single `nodes` Table
-
-Custom types store fields in the JSON `metadata` column rather than separate tables. Schema evolution is non-destructive — adding a type only requires an INSERT, not a CREATE TABLE.
-
-### No File Processing
-
-Graph Lite does NOT process documents. Claude Desktop reads files natively. The flow is: user gives Claude a document → Claude reads it → Claude calls `remember` to store insights. File processing is planned as a separate product.
-
-### Passphrase Auth (Not OAuth/JWT)
-
-Local tool needs local auth. Node's built-in `crypto.scrypt` handles hashing — zero external dependencies. Session cookies with configurable duration. No accounts, no cloud auth providers.
-
----
-
-## Current Status
-
-- **Version:** 1.1.0
-- **Status:** Stable — shipped and tested on Claude Desktop (Chat + Code tabs)
-
----
-
-## How to Build
-
-```bash
-cd Karp_Graph_Lite
-npm install
-npm run build    # Creates dist/karp-graph-lite.mcpb
+```
+~/.karp-word-graph/graph.db
 ```
 
-## How to Install
+If the file is missing or very small (< 1MB), the bundled database didn't copy. You can manually copy it:
 
-1. Open Claude Desktop
-2. Settings → Extensions → Install Extension
-3. Select `dist/karp-graph-lite.mcpb`
-4. Choose a data folder when prompted
-5. Set a passphrase (recommended for shared networks)
-6. Open `http://localhost:3456` to see your graph
+1. Find the `.mcpb` bundle's extracted location (check Claude Desktop settings)
+2. Look for `data/graph.db` inside it
+3. Copy it to `~/.karp-word-graph/graph.db`
 
-## How to Test (Manual)
+Or re-ingest from source:
 
 ```bash
-DATA_PATH=./test_data UI_PORT=3456 UI_PASSWORD=yourpassphrase node server/index.js
+cd path/to/karp-word-graph
+npm run ingest
+# Then ask Claude to run re_embed_scriptures
 ```
+
+### Port conflict (localhost:3457 not loading)
+
+Another server is using port 3457. Change it in Claude Desktop extension settings — look for the "Web UI Port" option.
+
+### Web UI shows Graph Lite instead of Word Graph
+
+Graph Lite (port 3456) and Word Graph (port 3457) are separate servers. Make sure you're visiting the right port. If Graph Lite is disabled but still running, restart Claude Desktop.
+
+### Database location
+
+All your data is in a single file:
+
+```
+~/.karp-word-graph/graph.db
+```
+
+To back up: copy this file somewhere safe.
+To reset: delete this file and restart — the pre-loaded Bible will be copied fresh.
+To move: copy the file to the new location and set `DATA_PATH` environment variable.
+
+## Technical Details
+
+- **Translation:** King James Version (public domain)
+- **Source:** [aruljohn/Bible-kjv](https://github.com/aruljohn/Bible-kjv) (MIT license)
+- **Embedding model:** BGE-small-en-v1.5 via transformers.js (384 dimensions, ONNX runtime)
+- **Embedding strategy:** 3-verse sliding windows with 1-verse overlap (~15,857 passages)
+- **Database:** SQLite via sql.js (no native dependencies)
+- **Server:** Node.js MCP server + Express web UI
+- **Data path:** `~/.karp-word-graph/`
+- **Web UI port:** 3457 (configurable)
+
+## Reference Format
+
+The server accepts multiple reference formats:
+
+| Format | Example |
+|--------|---------|
+| Natural | "John 3:16", "Genesis 1:1-5", "Psalm 23" |
+| Abbreviated | "JHN 3:16", "GEN 1:1-5", "PSA 23" |
+| Internal | "JHN.3.16", "GEN.1.1-5", "PSA.23" |
+| Book + params | `{ "book": "PSA", "chapter": 23 }` |
+
+Book abbreviations follow the USFM standard (GEN, EXO, LEV, NUM, DEU, JOS, JDG, RUT, 1SA, 2SA, 1KI, 2KI, 1CH, 2CH, EZR, NEH, EST, JOB, PSA, PRO, ECC, SOS, ISA, JER, LAM, EZK, DAN, HOS, JOL, AMO, OBA, JON, MIC, NAH, HAB, ZEP, HAG, ZEC, MAL, MAT, MRK, LUK, JHN, ACT, ROM, 1CO, 2CO, GAL, EPH, PHP, COL, 1TH, 2TH, 1TI, 2TI, TIT, PHM, HEB, JAS, 1PE, 2PE, 1JN, 2JN, 3JN, JUD, REV).
 
 ---
 
-## License
-
-MIT — SoulDriver (Adelaide, Australia)
-
-**The full KARP Research Engine uses enterprise-grade vector storage, multi-AI deliberation across four frontier models, and a knowledge graph architecture built for institutional-scale research. Graph Lite is the free personal edition.**
-
-[souldriver.com.au](https://souldriver.com.au)
+Built by [SoulDriver](https://souldriver.com.au) — Powered by KARP Graph Lite foundation.

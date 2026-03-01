@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>KARP Graph Lite — Knowledge Graph</title>
+<title>KARP Word Graph — Search the Scriptures</title>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/d3/7.9.0/d3.min.js"></script>
 <style>
 /* ============================================================================
@@ -569,6 +569,90 @@ body {
     .main { padding: 16px; }
     .card-grid { grid-template-columns: repeat(2, 1fr); }
 }
+
+/* --- Scripture Reader --- */
+.scripture-layout { display: flex; gap: 24px; margin-top: 16px; }
+.book-panel { width: 260px; flex-shrink: 0; }
+.reading-panel { flex: 1; min-width: 0; }
+
+.testament-tabs { display: flex; gap: 4px; margin-bottom: 12px; }
+.testament-tab {
+    padding: 6px 14px; border-radius: var(--radius); border: 1px solid var(--border);
+    background: var(--bg-secondary); color: var(--text-secondary); cursor: pointer;
+    font-size: 13px; transition: all 0.15s;
+}
+.testament-tab:hover { border-color: var(--teal-dim); color: var(--text-primary); }
+.testament-tab.active { background: var(--teal-glow); border-color: var(--teal); color: var(--teal); }
+
+.book-grid {
+    display: grid; grid-template-columns: 1fr 1fr; gap: 4px;
+    max-height: 65vh; overflow-y: auto; padding-right: 4px;
+}
+.book-btn {
+    padding: 6px 8px; border-radius: 4px; border: 1px solid var(--border);
+    background: var(--bg-secondary); color: var(--text-secondary); cursor: pointer;
+    font-size: 12px; text-align: left; transition: all 0.12s; white-space: nowrap;
+    overflow: hidden; text-overflow: ellipsis;
+}
+.book-btn:hover { border-color: var(--teal-dim); color: var(--text-primary); background: var(--bg-hover); }
+.book-btn.active { border-color: var(--teal); color: var(--teal); background: var(--teal-glow); }
+
+.chapter-nav { display: flex; flex-wrap: wrap; gap: 4px; margin: 12px 0; }
+.ch-btn {
+    width: 36px; height: 32px; border-radius: 4px; border: 1px solid var(--border);
+    background: var(--bg-secondary); color: var(--text-secondary); cursor: pointer;
+    font-size: 13px; display: flex; align-items: center; justify-content: center;
+    transition: all 0.12s;
+}
+.ch-btn:hover { border-color: var(--teal-dim); color: var(--text-primary); }
+.ch-btn.active { border-color: var(--teal); color: var(--teal); background: var(--teal-glow); }
+
+.verse-container {
+    background: var(--bg-secondary); border: 1px solid var(--border);
+    border-radius: var(--radius-lg); padding: 28px 32px;
+    max-height: 70vh; overflow-y: auto; line-height: 1.85;
+}
+.verse-container h3 {
+    color: var(--teal); font-size: 18px; margin-bottom: 16px;
+    padding-bottom: 12px; border-bottom: 1px solid var(--border);
+}
+.verse { margin-bottom: 4px; color: var(--text-primary); font-size: 15px; }
+.verse .vnum {
+    color: var(--teal); font-size: 11px; font-weight: 700;
+    vertical-align: super; margin-right: 4px; opacity: 0.8;
+}
+.verse-container .empty {
+    color: var(--text-muted); text-align: center; padding: 60px 20px;
+    font-style: italic;
+}
+
+.scripture-search {
+    display: flex; gap: 8px; margin-bottom: 16px;
+}
+.scripture-search input {
+    flex: 1; padding: 8px 14px; border-radius: var(--radius);
+    border: 1px solid var(--border); background: var(--bg-secondary);
+    color: var(--text-primary); font-size: 14px; outline: none;
+}
+.scripture-search input:focus { border-color: var(--teal); }
+.scripture-search input::placeholder { color: var(--text-muted); }
+
+.search-results { margin-top: 12px; }
+.search-result {
+    background: var(--bg-secondary); border: 1px solid var(--border);
+    border-radius: var(--radius); padding: 14px 18px; margin-bottom: 8px;
+    cursor: pointer; transition: all 0.12s;
+}
+.search-result:hover { border-color: var(--teal-dim); background: var(--bg-hover); }
+.search-result .ref { color: var(--teal); font-weight: 600; font-size: 14px; }
+.search-result .preview { color: var(--text-secondary); font-size: 13px; margin-top: 4px; line-height: 1.5; }
+.search-result .score { color: var(--text-muted); font-size: 11px; float: right; }
+
+@media (max-width: 800px) {
+    .scripture-layout { flex-direction: column; }
+    .book-panel { width: 100%; }
+    .book-grid { grid-template-columns: repeat(4, 1fr); max-height: 30vh; }
+}
 </style>
 </head>
 <body>
@@ -577,12 +661,15 @@ body {
     <!-- Sidebar Navigation -->
     <div class="sidebar">
         <div class="logo">
-            <h1>KARP GRAPH</h1>
-            <div class="subtitle">by SoulDriver</div>
+            <h1>WORD GRAPH</h1>
+            <div class="subtitle">Search the Scriptures</div>
         </div>
         <div class="nav">
             <div class="nav-item active" data-page="dashboard">
                 <span class="icon">📊</span><span>Dashboard</span>
+            </div>
+            <div class="nav-item" data-page="scripture">
+                <span class="icon">📖</span><span>Scripture</span>
             </div>
             <div class="nav-item" data-page="browse">
                 <span class="icon">📂</span><span>Browse</span>
@@ -727,6 +814,7 @@ async function renderPage() {
 
     switch (state.page) {
         case 'dashboard': await renderDashboard(main); break;
+        case 'scripture': await renderScripture(main); break;
         case 'browse': await renderBrowse(main); break;
         case 'graph': await renderGraph(main); break;
         case 'types': await renderTypes(main); break;
@@ -890,6 +978,191 @@ async function doSearch(mode) {
 function setTypeFilter(type) {
     state.filterType = type;
     renderPage();
+}
+
+// ---------------------------------------------------------------------------
+// Scripture Reader
+// ---------------------------------------------------------------------------
+
+const scriptureState = { books: [], testament: 'all', book: null, chapter: null, searchQuery: '' };
+
+async function renderScripture(el) {
+    // Load books once
+    if (scriptureState.books.length === 0) {
+        try {
+            scriptureState.books = await api('/api/scripture/books');
+        } catch { scriptureState.books = []; }
+    }
+
+    const books = scriptureState.testament === 'all'
+        ? scriptureState.books
+        : scriptureState.books.filter(b => b.testament === scriptureState.testament);
+
+    const activeBook = scriptureState.book
+        ? scriptureState.books.find(b => b.abbrev === scriptureState.book)
+        : null;
+
+    el.innerHTML = `
+        <div class="page-header">
+            <h2>📖 Scripture</h2>
+            <div style="color:var(--text-muted); font-size:13px;">KJV · 31,102 verses · 66 books</div>
+        </div>
+
+        <div class="scripture-search">
+            <input type="text" id="scripture-search-input" placeholder="Search by meaning — e.g. 'hope in suffering', 'God's promises'..."
+                   value="${scriptureState.searchQuery}" />
+            <button class="btn" onclick="doScriptureSearch()">Search</button>
+            <button class="btn" id="scripture-clear-btn" style="display:none; background:var(--bg-tertiary);" onclick="clearScriptureSearch()">Clear</button>
+        </div>
+        <div id="scripture-search-results"></div>
+
+        <div class="scripture-layout">
+            <div class="book-panel">
+                <div class="testament-tabs">
+                    <div class="testament-tab ${scriptureState.testament === 'all' ? 'active' : ''}" onclick="setTestament('all')">All</div>
+                    <div class="testament-tab ${scriptureState.testament === 'OT' ? 'active' : ''}" onclick="setTestament('OT')">Old Testament</div>
+                    <div class="testament-tab ${scriptureState.testament === 'NT' ? 'active' : ''}" onclick="setTestament('NT')">New Testament</div>
+                </div>
+                <div class="book-grid">
+                    ${books.map(b => `
+                        <div class="book-btn ${scriptureState.book === b.abbrev ? 'active' : ''}"
+                             onclick="selectBook('${b.abbrev}')" title="${b.name} (${b.chapter_count} ch)">
+                            ${b.name}
+                        </div>
+                    `).join('')}
+                </div>
+            </div>
+
+            <div class="reading-panel">
+                ${activeBook ? `
+                    <div class="chapter-nav">
+                        ${Array.from({length: activeBook.chapter_count}, (_, i) => i + 1).map(ch => `
+                            <div class="ch-btn ${scriptureState.chapter === ch ? 'active' : ''}"
+                                 onclick="selectChapter(${ch})">${ch}</div>
+                        `).join('')}
+                    </div>
+                ` : ''}
+                <div class="verse-container" id="verse-display">
+                    ${!activeBook
+                        ? '<div class="empty">Select a book to begin reading</div>'
+                        : !scriptureState.chapter
+                            ? '<div class="empty">Select a chapter</div>'
+                            : '<div class="loading"><div class="spinner"></div>Loading...</div>'
+                    }
+                </div>
+            </div>
+        </div>
+    `;
+
+    // Bind enter key on search
+    document.getElementById('scripture-search-input')?.addEventListener('keydown', e => {
+        if (e.key === 'Enter') doScriptureSearch();
+    });
+
+    // Auto-load chapter if set
+    if (activeBook && scriptureState.chapter) {
+        await loadChapter(activeBook.abbrev, scriptureState.chapter);
+    }
+}
+
+function setTestament(t) {
+    scriptureState.testament = t;
+    renderPage();
+}
+
+function selectBook(abbrev) {
+    scriptureState.book = abbrev;
+    scriptureState.chapter = null;
+    renderPage();
+}
+
+function selectChapter(ch) {
+    scriptureState.chapter = ch;
+    renderPage();
+}
+
+async function loadChapter(bookAbbrev, chapter) {
+    const display = document.getElementById('verse-display');
+    if (!display) return;
+
+    try {
+        const data = await api(`/api/scripture/${bookAbbrev}/${chapter}`);
+        const bookName = data.book?.name || bookAbbrev;
+
+        display.innerHTML = `
+            <h3>${bookName} ${chapter}</h3>
+            <div style="display:flex; gap:8px; margin-bottom:16px;">
+                ${chapter > 1 ? `<button class="btn btn-sm" onclick="selectChapter(${chapter - 1})">◀ Ch ${chapter - 1}</button>` : ''}
+                ${data.book && chapter < data.book.chapter_count ? `<button class="btn btn-sm" onclick="selectChapter(${chapter + 1})">Ch ${chapter + 1} ▶</button>` : ''}
+            </div>
+            ${data.verses.map(v => `
+                <span class="verse"><span class="vnum">${v.verse}</span>${v.text} </span>
+            `).join('')}
+        `;
+    } catch (err) {
+        display.innerHTML = `<div class="empty">Error loading chapter: ${err.message}</div>`;
+    }
+}
+
+async function doScriptureSearch() {
+    const input = document.getElementById('scripture-search-input');
+    const resultsDiv = document.getElementById('scripture-search-results');
+    if (!input || !resultsDiv) return;
+
+    const query = input.value.trim();
+    scriptureState.searchQuery = query;
+    if (!query) { resultsDiv.innerHTML = ''; return; }
+
+    resultsDiv.innerHTML = '<div class="loading"><div class="spinner"></div>Searching 15,857 passages...</div>';
+
+    try {
+        const data = await api(`/api/scripture/search?q=${encodeURIComponent(query)}&limit=8`);
+        const results = data.results || data;
+
+        if (results.length === 0) {
+            resultsDiv.innerHTML = '<div style="color:var(--text-muted); padding:12px;">No passages found. Try different words.</div>';
+            return;
+        }
+
+        const clearBtn = document.getElementById('scripture-clear-btn');
+        if (clearBtn) clearBtn.style.display = 'inline-block';
+
+        resultsDiv.innerHTML = `
+            <div class="search-results">
+                ${results.map(r => {
+                    const text = r.text || '';
+                    const preview = text.length > 200 ? text.substring(0, 200) + '...' : text;
+                    const score = r.similarity ? `${Math.round(r.similarity * 100)}%` : '';
+                    return `
+                        <div class="search-result" onclick="jumpToResult('${r.book_abbrev}', ${r.chapter || r.verse_start}, ${r.verse_start || 0})">
+                            ${score ? `<span class="score">${score} match</span>` : ''}
+                            <div class="ref">${r.reference}</div>
+                            <div class="preview">${preview}</div>
+                        </div>
+                    `;
+                }).join('')}
+            </div>
+        `;
+    } catch (err) {
+        resultsDiv.innerHTML = `<div style="color:var(--red); padding:12px;">Search error: ${err.message}</div>`;
+    }
+}
+
+function jumpToResult(bookAbbrev, chapter, verse) {
+    scriptureState.book = bookAbbrev;
+    scriptureState.chapter = chapter;
+    scriptureState.searchQuery = '';
+    renderPage();
+}
+
+function clearScriptureSearch() {
+    scriptureState.searchQuery = '';
+    const input = document.getElementById('scripture-search-input');
+    const results = document.getElementById('scripture-search-results');
+    const clearBtn = document.getElementById('scripture-clear-btn');
+    if (input) input.value = '';
+    if (results) results.innerHTML = '';
+    if (clearBtn) clearBtn.style.display = 'none';
 }
 
 // ---------------------------------------------------------------------------

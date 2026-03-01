@@ -1,11 +1,11 @@
 // ============================================================================
-// KARP Graph Lite — Database Layer (sql.js / WebAssembly SQLite)
-// Version: 1.0.1
+// KARP Word Graph — Database Layer (sql.js / WebAssembly SQLite)
+// Version: 1.0.0
 // Author: SoulDriver (Adelaide, Australia)
-// Description: All SQLite operations — schema, CRUD, migrations, snapshots.
-//              Uses sql.js (SQLite compiled to WASM) for universal compatibility
-//              with any Node.js runtime including Claude Desktop's built-in Node.
-//              Single file database, zero native dependencies, fully portable.
+// Description: Scripture storage + personal knowledge graph.
+//              All SQLite operations — schema, CRUD, migrations, snapshots.
+//              Uses sql.js (SQLite compiled to WASM) for universal compatibility.
+//              Based on KARP Graph Lite foundation.
 // License: MIT
 // ============================================================================
 
@@ -171,12 +171,82 @@ function initSchema() {
         );
     `);
 
+    // --- Scripture Tables (Word Graph) ---
+
+    db.run(`
+        CREATE TABLE IF NOT EXISTS books (
+            book_order INTEGER PRIMARY KEY,
+            name TEXT NOT NULL UNIQUE,
+            abbrev TEXT NOT NULL UNIQUE,
+            testament TEXT NOT NULL CHECK(testament IN ('OT', 'NT')),
+            chapter_count INTEGER NOT NULL DEFAULT 0,
+            verse_count INTEGER NOT NULL DEFAULT 0,
+            translation TEXT NOT NULL DEFAULT 'KJV'
+        );
+    `);
+
+    db.run(`
+        CREATE TABLE IF NOT EXISTS scriptures (
+            id TEXT PRIMARY KEY,
+            book TEXT NOT NULL,
+            book_abbrev TEXT NOT NULL,
+            book_order INTEGER NOT NULL,
+            chapter INTEGER NOT NULL,
+            verse INTEGER NOT NULL,
+            text TEXT NOT NULL,
+            translation TEXT NOT NULL DEFAULT 'KJV'
+        );
+    `);
+
+    db.run(`
+        CREATE TABLE IF NOT EXISTS scripture_embeddings (
+            passage_id TEXT PRIMARY KEY,
+            book_abbrev TEXT NOT NULL,
+            chapter INTEGER NOT NULL,
+            verse_start INTEGER NOT NULL,
+            verse_end INTEGER NOT NULL,
+            passage_text TEXT NOT NULL,
+            vector BLOB NOT NULL,
+            model TEXT NOT NULL,
+            embedded_at REAL NOT NULL
+        );
+    `);
+
+    db.run(`
+        CREATE TABLE IF NOT EXISTS study_sessions (
+            id TEXT PRIMARY KEY,
+            passage_ref TEXT NOT NULL,
+            started_at REAL NOT NULL,
+            ended_at REAL,
+            notes TEXT DEFAULT ''
+        );
+    `);
+
+    db.run(`
+        CREATE TABLE IF NOT EXISTS reading_plans (
+            id TEXT PRIMARY KEY,
+            name TEXT NOT NULL,
+            description TEXT DEFAULT '',
+            plan_data TEXT NOT NULL DEFAULT '[]',
+            current_position INTEGER NOT NULL DEFAULT 0,
+            created_at REAL NOT NULL,
+            updated_at REAL NOT NULL
+        );
+    `);
+
     // Indexes (CREATE INDEX IF NOT EXISTS is safe to run repeatedly)
     db.run('CREATE INDEX IF NOT EXISTS idx_nodes_type ON nodes(type);');
     db.run('CREATE INDEX IF NOT EXISTS idx_nodes_created ON nodes(created_at);');
     db.run('CREATE INDEX IF NOT EXISTS idx_nodes_updated ON nodes(updated_at);');
     db.run('CREATE INDEX IF NOT EXISTS idx_edges_source ON edges(source_id);');
     db.run('CREATE INDEX IF NOT EXISTS idx_edges_target ON edges(target_id);');
+
+    // Scripture indexes
+    db.run('CREATE INDEX IF NOT EXISTS idx_scriptures_book ON scriptures(book_abbrev);');
+    db.run('CREATE INDEX IF NOT EXISTS idx_scriptures_ref ON scriptures(book_abbrev, chapter, verse);');
+    db.run('CREATE INDEX IF NOT EXISTS idx_scriptures_order ON scriptures(book_order, chapter, verse);');
+    db.run('CREATE INDEX IF NOT EXISTS idx_scripture_emb_book ON scripture_embeddings(book_abbrev);');
+    db.run('CREATE INDEX IF NOT EXISTS idx_scripture_emb_chapter ON scripture_embeddings(book_abbrev, chapter);');
 
     // Seed base types
     seedBaseTypes();
@@ -255,6 +325,78 @@ function seedBaseTypes() {
                 { name: 'changes', type: 'array', required: false }
             ]),
             icon: '📋'
+        },
+        // --- Word Graph study types ---
+        {
+            type_name: 'study_note',
+            display_name: 'Study Note',
+            description: 'Personal annotation on a scripture passage',
+            fields: JSON.stringify([
+                { name: 'summary', type: 'string', required: true },
+                { name: 'detail', type: 'text', required: false },
+                { name: 'passage_ref', type: 'string', required: false, description: 'e.g. JHN.3.16 or ROM.8.28-30' }
+            ]),
+            icon: '📝'
+        },
+        {
+            type_name: 'prayer',
+            display_name: 'Prayer',
+            description: 'Prayer journal entry, optionally linked to scripture',
+            fields: JSON.stringify([
+                { name: 'summary', type: 'string', required: true },
+                { name: 'detail', type: 'text', required: false },
+                { name: 'passage_ref', type: 'string', required: false },
+                { name: 'prayer_type', type: 'enum', values: ['praise', 'thanksgiving', 'petition', 'intercession', 'confession', 'other'], required: false }
+            ]),
+            icon: '🙏'
+        },
+        {
+            type_name: 'teaching',
+            display_name: 'Teaching',
+            description: 'Sermon notes, Bible study group notes, lessons',
+            fields: JSON.stringify([
+                { name: 'summary', type: 'string', required: true },
+                { name: 'detail', type: 'text', required: false },
+                { name: 'teacher', type: 'string', required: false },
+                { name: 'passage_ref', type: 'string', required: false }
+            ]),
+            icon: '📖'
+        },
+        {
+            type_name: 'cross_ref',
+            display_name: 'Cross Reference',
+            description: 'User-discovered connection between scripture passages',
+            fields: JSON.stringify([
+                { name: 'summary', type: 'string', required: true },
+                { name: 'source_ref', type: 'string', required: true, description: 'Source passage e.g. GEN.1.1' },
+                { name: 'target_ref', type: 'string', required: true, description: 'Target passage e.g. JHN.1.1' },
+                { name: 'detail', type: 'text', required: false }
+            ]),
+            icon: '🔗'
+        },
+        {
+            type_name: 'question',
+            display_name: 'Question',
+            description: 'Questions arising from study, for later exploration',
+            fields: JSON.stringify([
+                { name: 'summary', type: 'string', required: true },
+                { name: 'detail', type: 'text', required: false },
+                { name: 'passage_ref', type: 'string', required: false },
+                { name: 'status', type: 'enum', values: ['open', 'exploring', 'resolved'], required: false }
+            ]),
+            icon: '❓'
+        },
+        {
+            type_name: 'memory_verse',
+            display_name: 'Memory Verse',
+            description: 'Verses being memorized with progress tracking',
+            fields: JSON.stringify([
+                { name: 'summary', type: 'string', required: true },
+                { name: 'passage_ref', type: 'string', required: true },
+                { name: 'status', type: 'enum', values: ['learning', 'reviewing', 'memorized'], required: false },
+                { name: 'last_reviewed', type: 'string', required: false }
+            ]),
+            icon: '⭐'
         }
     ];
 
@@ -720,6 +862,244 @@ function exportJSON() {
 }
 
 // ---------------------------------------------------------------------------
+// Scripture CRUD (Word Graph)
+// ---------------------------------------------------------------------------
+
+// Book abbreviation map — standard USFM-style abbreviations
+const BOOK_ABBREVS = {
+    'Genesis': 'GEN', 'Exodus': 'EXO', 'Leviticus': 'LEV', 'Numbers': 'NUM',
+    'Deuteronomy': 'DEU', 'Joshua': 'JOS', 'Judges': 'JDG', 'Ruth': 'RUT',
+    '1 Samuel': '1SA', '2 Samuel': '2SA', '1 Kings': '1KI', '2 Kings': '2KI',
+    '1 Chronicles': '1CH', '2 Chronicles': '2CH', 'Ezra': 'EZR', 'Nehemiah': 'NEH',
+    'Esther': 'EST', 'Job': 'JOB', 'Psalms': 'PSA', 'Proverbs': 'PRO',
+    'Ecclesiastes': 'ECC', 'Song of Solomon': 'SOS', 'Isaiah': 'ISA', 'Jeremiah': 'JER',
+    'Lamentations': 'LAM', 'Ezekiel': 'EZK', 'Daniel': 'DAN', 'Hosea': 'HOS',
+    'Joel': 'JOL', 'Amos': 'AMO', 'Obadiah': 'OBA', 'Jonah': 'JON',
+    'Micah': 'MIC', 'Nahum': 'NAH', 'Habakkuk': 'HAB', 'Zephaniah': 'ZEP',
+    'Haggai': 'HAG', 'Zechariah': 'ZEC', 'Malachi': 'MAL',
+    'Matthew': 'MAT', 'Mark': 'MRK', 'Luke': 'LUK', 'John': 'JHN',
+    'Acts': 'ACT', 'Romans': 'ROM', '1 Corinthians': '1CO', '2 Corinthians': '2CO',
+    'Galatians': 'GAL', 'Ephesians': 'EPH', 'Philippians': 'PHP', 'Colossians': 'COL',
+    '1 Thessalonians': '1TH', '2 Thessalonians': '2TH', '1 Timothy': '1TI', '2 Timothy': '2TI',
+    'Titus': 'TIT', 'Philemon': 'PHM', 'Hebrews': 'HEB', 'James': 'JAS',
+    '1 Peter': '1PE', '2 Peter': '2PE', '1 John': '1JN', '2 John': '2JN',
+    '3 John': '3JN', 'Jude': 'JUD', 'Revelation': 'REV'
+};
+
+// Reverse lookup: abbrev → full name
+const ABBREV_TO_NAME = Object.fromEntries(Object.entries(BOOK_ABBREVS).map(([k, v]) => [v, k]));
+
+function getBookAbbrev(bookName) {
+    return BOOK_ABBREVS[bookName] || bookName.substring(0, 3).toUpperCase();
+}
+
+function getBookName(abbrev) {
+    return ABBREV_TO_NAME[abbrev.toUpperCase()] || abbrev;
+}
+
+function insertBook({ bookOrder, name, abbrev, testament, chapterCount, verseCount, translation }) {
+    runSql(
+        `INSERT OR REPLACE INTO books (book_order, name, abbrev, testament, chapter_count, verse_count, translation) VALUES (?, ?, ?, ?, ?, ?, ?)`,
+        [bookOrder, name, abbrev, testament, chapterCount, verseCount, translation || 'KJV']
+    );
+}
+
+function insertScripture({ id, book, bookAbbrev, bookOrder, chapter, verse, text, translation }) {
+    runSql(
+        `INSERT OR REPLACE INTO scriptures (id, book, book_abbrev, book_order, chapter, verse, text, translation) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+        [id, book, bookAbbrev, bookOrder, chapter, verse, text, translation || 'KJV']
+    );
+}
+
+function insertScriptureBatch(verses) {
+    db.run('BEGIN TRANSACTION;');
+    try {
+        for (const v of verses) {
+            runSql(
+                `INSERT OR REPLACE INTO scriptures (id, book, book_abbrev, book_order, chapter, verse, text, translation) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+                [v.id, v.book, v.bookAbbrev, v.bookOrder, v.chapter, v.verse, v.text, v.translation || 'KJV']
+            );
+        }
+        db.run('COMMIT;');
+        debouncedSave();
+        return { inserted: verses.length };
+    } catch (err) {
+        db.run('ROLLBACK;');
+        throw err;
+    }
+}
+
+function getScripture(bookAbbrev, chapter, verse) {
+    return queryOne(
+        'SELECT * FROM scriptures WHERE book_abbrev = ? AND chapter = ? AND verse = ?',
+        [bookAbbrev.toUpperCase(), parseInt(chapter), parseInt(verse)]
+    );
+}
+
+function getChapter(bookAbbrev, chapter) {
+    return queryAll(
+        'SELECT * FROM scriptures WHERE book_abbrev = ? AND chapter = ? ORDER BY verse ASC',
+        [bookAbbrev.toUpperCase(), parseInt(chapter)]
+    );
+}
+
+function getVerseRange(bookAbbrev, chapter, verseStart, verseEnd) {
+    return queryAll(
+        'SELECT * FROM scriptures WHERE book_abbrev = ? AND chapter = ? AND verse >= ? AND verse <= ? ORDER BY verse ASC',
+        [bookAbbrev.toUpperCase(), parseInt(chapter), parseInt(verseStart), parseInt(verseEnd)]
+    );
+}
+
+function getBook(bookAbbrev) {
+    return queryOne('SELECT * FROM books WHERE abbrev = ?', [bookAbbrev.toUpperCase()]);
+}
+
+function listBooks(translation) {
+    if (translation) {
+        return queryAll('SELECT * FROM books WHERE translation = ? ORDER BY book_order ASC', [translation]);
+    }
+    return queryAll('SELECT * FROM books ORDER BY book_order ASC');
+}
+
+function searchScriptureKeyword(query, { limit = 20, book = null } = {}) {
+    const pattern = `%${query}%`;
+    if (book) {
+        return queryAll(
+            'SELECT * FROM scriptures WHERE text LIKE ? AND book_abbrev = ? ORDER BY book_order, chapter, verse LIMIT ?',
+            [pattern, book.toUpperCase(), limit]
+        );
+    }
+    return queryAll(
+        'SELECT * FROM scriptures WHERE text LIKE ? ORDER BY book_order, chapter, verse LIMIT ?',
+        [pattern, limit]
+    );
+}
+
+function getScriptureStats() {
+    const totalVerses = queryOne('SELECT COUNT(*) as count FROM scriptures')?.count || 0;
+    const totalBooks = queryOne('SELECT COUNT(*) as count FROM books')?.count || 0;
+    const translations = queryAll('SELECT DISTINCT translation FROM scriptures');
+    const totalPassageEmbeddings = queryOne('SELECT COUNT(*) as count FROM scripture_embeddings')?.count || 0;
+    const bookList = queryAll('SELECT abbrev, name, testament, chapter_count, verse_count FROM books ORDER BY book_order ASC');
+
+    return {
+        total_verses: totalVerses,
+        total_books: totalBooks,
+        total_passage_embeddings: totalPassageEmbeddings,
+        translations: translations.map(t => t.translation),
+        books: bookList,
+        scripture_loaded: totalVerses > 0
+    };
+}
+
+// Store a passage embedding (for sliding window approach)
+function storeScriptureEmbedding(passageId, bookAbbrev, chapter, verseStart, verseEnd, passageText, vector, model) {
+    const now = Date.now() / 1000;
+    const vectorBlob = Buffer.from(new Float32Array(vector).buffer);
+    runSql(
+        `INSERT OR REPLACE INTO scripture_embeddings (passage_id, book_abbrev, chapter, verse_start, verse_end, passage_text, vector, model, embedded_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        [passageId, bookAbbrev, chapter, verseStart, verseEnd, passageText, vectorBlob, model, now]
+    );
+}
+
+function getAllScriptureEmbeddings() {
+    const rows = queryAll('SELECT passage_id, book_abbrev, chapter, verse_start, verse_end, vector FROM scripture_embeddings');
+    return rows.map(r => {
+        const buf = r.vector;
+        const floats = new Float32Array(buf.buffer, buf.byteOffset, buf.length / 4);
+        return {
+            passage_id: r.passage_id,
+            book_abbrev: r.book_abbrev,
+            chapter: r.chapter,
+            verse_start: r.verse_start,
+            verse_end: r.verse_end,
+            vector: Array.from(floats)
+        };
+    });
+}
+
+function getScriptureContext(bookAbbrev, chapter, verse, windowSize = 2) {
+    // Get surrounding verses for context
+    const vStart = Math.max(1, parseInt(verse) - windowSize);
+    const vEnd = parseInt(verse) + windowSize;
+    const verses = queryAll(
+        'SELECT * FROM scriptures WHERE book_abbrev = ? AND chapter = ? AND verse >= ? AND verse <= ? ORDER BY verse ASC',
+        [bookAbbrev.toUpperCase(), parseInt(chapter), vStart, vEnd]
+    );
+
+    // Get study notes connected to this passage
+    const passagePattern = `%${bookAbbrev.toUpperCase()}.${chapter}.${verse}%`;
+    const studyNotes = queryAll(
+        `SELECT * FROM nodes WHERE type IN ('study_note', 'prayer', 'teaching', 'question', 'memory_verse')
+         AND (context LIKE ? OR summary LIKE ? OR detail LIKE ?)`,
+        [passagePattern, passagePattern, passagePattern]
+    ).map(n => ({ ...n, tags: JSON.parse(n.tags || '[]'), metadata: JSON.parse(n.metadata || '{}') }));
+
+    return { verses, study_notes: studyNotes };
+}
+
+// Get study history — what has the user been studying recently?
+function getStudyHistory({ limit = 20, type = null } = {}) {
+    let sql = `SELECT * FROM nodes WHERE type IN ('study_note', 'insight', 'prayer', 'teaching', 'question', 'memory_verse')`;
+    const params = [];
+    if (type) {
+        sql = 'SELECT * FROM nodes WHERE type = ?';
+        params.push(type);
+    }
+    sql += ' ORDER BY updated_at DESC LIMIT ?';
+    params.push(limit);
+
+    return queryAll(sql, params).map(n => ({
+        ...n,
+        tags: JSON.parse(n.tags || '[]'),
+        metadata: JSON.parse(n.metadata || '{}')
+    }));
+}
+
+// Parse a passage reference like "JHN.3.16" or "ROM.8.28-30" or "Genesis 1:1"
+function parsePassageRef(ref) {
+    // Format 1: ABBREV.CHAPTER.VERSE (our internal format)
+    let match = ref.match(/^([A-Z0-9]{2,3})\.([\d]+)\.([\d]+)(?:-([\d]+))?$/i);
+    if (match) {
+        return {
+            book_abbrev: match[1].toUpperCase(),
+            book_name: getBookName(match[1].toUpperCase()),
+            chapter: parseInt(match[2]),
+            verse_start: parseInt(match[3]),
+            verse_end: match[4] ? parseInt(match[4]) : parseInt(match[3])
+        };
+    }
+
+    // Format 2: "Book Chapter:Verse" (e.g. "John 3:16", "1 Corinthians 13:4-7")
+    match = ref.match(/^(.+?)\s+(\d+):(\d+)(?:-(\d+))?$/i);
+    if (match) {
+        const bookName = match[1].trim();
+        const abbrev = BOOK_ABBREVS[bookName] || bookName.substring(0, 3).toUpperCase();
+        return {
+            book_abbrev: abbrev,
+            book_name: bookName,
+            chapter: parseInt(match[2]),
+            verse_start: parseInt(match[3]),
+            verse_end: match[4] ? parseInt(match[4]) : parseInt(match[3])
+        };
+    }
+
+    // Format 3: Just a book abbreviation + chapter (e.g. "GEN.1" or "Psalms 23")
+    match = ref.match(/^([A-Z0-9]{2,3})\.(\d+)$/i);
+    if (match) {
+        return {
+            book_abbrev: match[1].toUpperCase(),
+            book_name: getBookName(match[1].toUpperCase()),
+            chapter: parseInt(match[2]),
+            verse_start: null,
+            verse_end: null
+        };
+    }
+
+    return null;
+}
+
+// ---------------------------------------------------------------------------
 // Exports
 // ---------------------------------------------------------------------------
 
@@ -763,5 +1143,25 @@ module.exports = {
     queryOne,
     // Save
     saveToDisk,
-    immediateSave
+    immediateSave,
+    // --- Scripture (Word Graph) ---
+    BOOK_ABBREVS,
+    ABBREV_TO_NAME,
+    getBookAbbrev,
+    getBookName,
+    insertBook,
+    insertScripture,
+    insertScriptureBatch,
+    getScripture,
+    getChapter,
+    getVerseRange,
+    getBook,
+    listBooks: listBooks,
+    searchScriptureKeyword,
+    getScriptureStats,
+    storeScriptureEmbedding,
+    getAllScriptureEmbeddings,
+    getScriptureContext,
+    getStudyHistory,
+    parsePassageRef
 };

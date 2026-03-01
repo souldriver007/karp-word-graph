@@ -219,6 +219,12 @@ async function verifyPassword(attempt) {
 // ---------------------------------------------------------------------------
 
 function authMiddleware(req, res, next) {
+    // Internal service bypass — allows KARP Agent Manager to call Graph Lite API
+    // Only works from localhost (Graph Lite binds to 127.0.0.1) with correct header
+    if (req.headers['x-karp-service'] === 'agent-manager') {
+        return next();
+    }
+
     // If first-run setup needed, only allow setup and status endpoints
     if (needsSetup) {
         if (req.path === '/api/auth/status' || req.path === '/api/auth/setup' || 

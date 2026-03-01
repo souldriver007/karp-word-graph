@@ -1,9 +1,10 @@
 // ============================================================================
-// KARP Graph Lite — Search Module
+// KARP Word Graph — Search Module
 // Version: 1.0.0
 // Author: SoulDriver (Adelaide, Australia)
-// Description: Semantic search (vector similarity) and keyword search across
-//              the knowledge graph. Combines database queries with embeddings.
+// Description: Semantic search across knowledge graph AND scripture.
+//              Vector similarity + keyword search.
+//              Based on KARP Graph Lite.
 // License: MIT
 // ============================================================================
 
@@ -219,6 +220,137 @@ async function embedMissing() {
 }
 
 // ---------------------------------------------------------------------------
+// Scripture Semantic Search (Word Graph)
+// ---------------------------------------------------------------------------
+
+async function scriptureSemanticSearch(query, { limit = 10, book = null, testament = null, minSimilarity = 0.25 } = {}) {
+    const scriptureEmbeddings = database.getAllScriptureEmbeddings();
+
+    if (scriptureEmbeddings.length === 0) {
+        // Fallback to keyword search
+        const kwResults = database.searchScriptureKeyword(query, { limit, book });
+        return {
+            results: kwResults.map(v => ({
+                reference: `${v.book} ${v.chapter}:${v.verse}`,
+                book: v.book,
+                book_abbrev: v.book_abbrev,
+                chapter: v.chapter,
+                verse: v.verse,
+                text: v.text,
+                match_type: 'keyword'
+            })),
+            query,
+            mode: 'keyword',
+            note: 'No scripture embeddings. Use re_embed_scriptures for semantic search.'
+        };
+    }
+
+    const queryVector = await embeddings.embed(query);
+
+    let scored = scriptureEmbeddings.map(emb => ({
+        ...emb,
+        similarity: embeddings.cosineSimilarity(queryVector, emb.vector)
+    }));
+
+    // Filter
+    scored = scored.filter(s => s.similarity >= minSimilarity);
+
+    if (book) {
+        scored = scored.filter(s => s.book_abbrev === book.toUpperCase());
+    }
+    if (testament) {
+        const bookList = database.listBooks();
+        const testBooks = new Set(bookList.filter(b => b.testament === testament).map(b => b.abbrev));
+        scored = scored.filter(s => testBooks.has(s.book_abbrev));
+    }
+
+    scored.sort((a, b) => b.similarity - a.similarity);
+    scored = scored.slice(0, limit);
+
+    // Hydrate with full verse text
+    const results = scored.map(s => {
+        const verses = database.getVerseRange(s.book_abbrev, s.chapter, s.verse_start, s.verse_end);
+        const bookInfo = database.getBook(s.book_abbrev);
+        return {
+            reference: `${bookInfo?.name || s.book_abbrev} ${s.chapter}:${s.verse_start}${s.verse_end !== s.verse_start ? '-' + s.verse_end : ''}`,
+            book: bookInfo?.name || s.book_abbrev,
+            book_abbrev: s.book_abbrev,
+            testament: bookInfo?.testament,
+            chapter: s.chapter,
+            verse_start: s.verse_start,
+            verse_end: s.verse_end,
+            text: verses.map(v => `${v.verse}. ${v.text}`).join(' '),
+            similarity: Math.round(s.similarity * 1000) / 1000,
+            match_type: 'semantic'
+        };
+    });
+
+    log('INFO', `Scripture search "${query}" → ${results.length} results (top: ${results[0]?.similarity || 0})`);
+
+    return { results, query, mode: 'semantic', total_passages: scriptureEmbeddings.length };
+}
+
+// ---------------------------------------------------------------------------
+// Embed Scripture Passages (sliding window)
+// ---------------------------------------------------------------------------
+
+async function embedScripturePassages({ book = null, windowSize = 3, overlap = 1, progressCallback = null } = {}) {
+    let booksToProcess = database.listBooks();
+    if (book) {
+        booksToProcess = booksToProcess.filter(b => b.abbrev === book.toUpperCase());
+    }
+
+    let totalPassages = 0;
+    let totalEmbedded = 0;
+    let errors = 0;
+
+    for (const bk of booksToProcess) {
+        for (let ch = 1; ch <= bk.chapter_count; ch++) {
+            const chapterVerses = database.getChapter(bk.abbrev, ch);
+            if (chapterVerses.length === 0) continue;
+
+            for (let i = 0; i < chapterVerses.length; i += (windowSize - overlap)) {
+                const window = chapterVerses.slice(i, i + windowSize);
+                if (window.length === 0) continue;
+
+                const vStart = window[0].verse;
+                const vEnd = window[window.length - 1].verse;
+                const passageId = `${bk.abbrev}.${ch}.${vStart}-${vEnd}`;
+                const passageText = window.map(v => v.text).join(' ');
+
+                totalPassages++;
+
+                try {
+                    const vector = await embeddings.embed(passageText);
+                    database.storeScriptureEmbedding(
+                        passageId, bk.abbrev, ch, vStart, vEnd,
+                        passageText, vector, embeddings.MODEL_NAME
+                    );
+                    totalEmbedded++;
+
+                    if (progressCallback && totalEmbedded % 100 === 0) {
+                        progressCallback(totalEmbedded, totalPassages);
+                    }
+                } catch (err) {
+                    log('ERROR', `Failed to embed ${passageId}: ${err.message}`);
+                    errors++;
+                }
+            }
+        }
+        log('INFO', `Scripture embedded: ${bk.abbrev} (${bk.name})`);
+    }
+
+    return {
+        total_passages: totalPassages,
+        embedded: totalEmbedded,
+        errors,
+        window_size: windowSize,
+        books_processed: booksToProcess.length,
+        model: embeddings.MODEL_NAME
+    };
+}
+
+// ---------------------------------------------------------------------------
 // Exports
 // ---------------------------------------------------------------------------
 
@@ -228,5 +360,8 @@ module.exports = {
     combinedSearch,
     embedNode,
     reEmbedAll,
-    embedMissing
+    embedMissing,
+    // Scripture (Word Graph)
+    scriptureSemanticSearch,
+    embedScripturePassages
 };

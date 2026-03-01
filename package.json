@@ -1,22 +1,24 @@
 {
-  "name": "karp-graph-lite",
-  "version": "1.1.0",
-  "description": "Self-evolving personal knowledge graph for Claude Desktop. By SoulDriver.",
+  "name": "karp-word-graph",
+  "version": "1.0.0",
+  "description": "Scripture study system with semantic search and personal knowledge graph. Search the Scriptures. By SoulDriver.",
   "main": "server/index.js",
   "author": "SoulDriver <hello@souldriver.com.au>",
   "license": "MIT",
   "homepage": "https://souldriver.com.au/karp-tools.html",
   "repository": {
     "type": "git",
-    "url": "https://github.com/souldriver007/karp-graph-lite"
+    "url": "https://github.com/souldriver007/karp-word-graph"
   },
   "keywords": [
     "mcp",
     "claude",
-    "knowledge-graph",
+    "scripture",
+    "bible",
+    "study",
     "semantic-search",
-    "memory",
-    "desktop-extension",
+    "knowledge-graph",
+    "concordance",
     "souldriver",
     "karp"
   ],
@@ -30,6 +32,7 @@
   },
   "scripts": {
     "start": "node server/index.js",
+    "ingest": "node scripts/ingest_bible.js",
     "test": "jest --verbose",
     "build": "node scripts/build_mcpb.js"
   },

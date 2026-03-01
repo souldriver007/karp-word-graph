@@ -1,11 +1,11 @@
 // ============================================================================
-// KARP Graph Lite — MCPB Build Script
+// KARP Word Graph — MCPB Build Script
 // Version: 1.0.0
 // Author: SoulDriver (Adelaide, Australia)
 // Usage: node scripts/build_mcpb.js
 //
 // Creates a .mcpb bundle (ZIP) with the correct structure:
-//   karp-graph-lite.mcpb
+//   karp-word-graph.mcpb
 //   ├── manifest.json
 //   ├── server/
 //   │   ├── index.js
@@ -13,11 +13,13 @@
 //   │   ├── embeddings.js
 //   │   ├── search.js
 //   │   └── auth.js
+//   ├── data/
+//   │   └── graph.db          (pre-loaded KJV Bible + embeddings)
 //   ├── ui/
 //   │   └── index.html
-//   ├── node_modules/   (production deps only)
+//   ├── node_modules/          (production deps only)
 //   ├── package.json
-//   └── icon.png        (if exists)
+//   └── icon.png               (if exists)
 // ============================================================================
 
 const fs = require('fs');
@@ -26,7 +28,10 @@ const { execSync } = require('child_process');
 
 const ROOT = path.join(__dirname, '..');
 const STAGE = path.join(ROOT, 'dist', 'stage');
-const OUTPUT = path.join(ROOT, 'dist', 'karp-graph-lite.mcpb');
+const OUTPUT = path.join(ROOT, 'dist', 'karp-word-graph.mcpb');
+
+// Default location of the pre-loaded database
+const DEFAULT_DB = path.join(require('os').homedir(), '.karp-word-graph', 'graph.db');
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -65,13 +70,14 @@ function fileSize(filepath) {
 // ---------------------------------------------------------------------------
 
 console.log('╔══════════════════════════════════════════════╗');
-console.log('║  KARP Graph Lite — MCPB Bundle Builder       ║');
+console.log('║  KARP Word Graph — MCPB Bundle Builder       ║');
+console.log('║  "Search the Scriptures" — John 5:39         ║');
 console.log('║  by SoulDriver (souldriver.com.au)           ║');
 console.log('╚══════════════════════════════════════════════╝');
 console.log('');
 
 // Step 1: Verify
-console.log('[1/6] Checking project...');
+console.log('[1/7] Checking project...');
 if (!fs.existsSync(path.join(ROOT, 'package.json'))) {
     console.error('      ✗ package.json not found!');
     process.exit(1);
@@ -97,12 +103,12 @@ for (const f of requiredFiles) {
 }
 
 // Step 2: Clean staging
-console.log('[2/6] Preparing staging directory...');
+console.log('[2/7] Preparing staging directory...');
 cleanDir(STAGE);
 console.log('      ✓ dist/stage cleaned');
 
 // Step 3: Copy files
-console.log('[3/6] Staging files...');
+console.log('[3/7] Staging files...');
 
 // manifest.json
 fs.copyFileSync(
@@ -138,13 +144,29 @@ if (fs.existsSync(iconPath)) {
     console.log('      ⚠ icon.png not found (optional — add to assets/)');
 }
 
-// Step 4: Install production dependencies
-console.log('[4/6] Installing production dependencies (strips dev deps)...');
+// Step 4: Bundle pre-loaded database
+console.log('[4/7] Bundling pre-loaded scripture database...');
+
+const dbSource = process.env.DB_PATH || DEFAULT_DB;
+if (fs.existsSync(dbSource)) {
+    const dataDir = path.join(STAGE, 'data');
+    fs.mkdirSync(dataDir, { recursive: true });
+    fs.copyFileSync(dbSource, path.join(dataDir, 'graph.db'));
+    console.log(`      ✓ data/graph.db (${fileSize(dbSource)}) — KJV Bible + embeddings`);
+} else {
+    console.warn(`      ⚠ No database found at: ${dbSource}`);
+    console.warn('      ⚠ Bundle will NOT include pre-loaded scripture.');
+    console.warn('      ⚠ Users will need to run: npm run ingest && re_embed_scriptures');
+    console.warn(`      ⚠ Set DB_PATH env var to override location.`);
+}
+
+// Step 5: Install production dependencies
+console.log('[5/7] Installing production dependencies (strips dev deps)...');
 execSync('npm install --omit=dev', { cwd: STAGE, stdio: 'inherit' });
 console.log('      ✓ node_modules/ (production dependencies only)');
 
-// Step 5: Create ZIP
-console.log('[5/6] Creating .mcpb bundle...');
+// Step 6: Create ZIP
+console.log('[6/7] Creating .mcpb bundle...');
 
 if (fs.existsSync(OUTPUT)) {
     fs.unlinkSync(OUTPUT);
@@ -169,12 +191,12 @@ try {
     console.log('      Manual alternative:');
     console.log(`      1. Open: ${STAGE}`);
     console.log('      2. Select all files → right-click → Send to → Compressed folder');
-    console.log(`      3. Rename to: karp-graph-lite.mcpb`);
+    console.log(`      3. Rename to: karp-word-graph.mcpb`);
     process.exit(1);
 }
 
-// Step 6: Summary
-console.log('[6/6] Build complete!');
+// Step 7: Summary
+console.log('[7/7] Build complete!');
 console.log('');
 console.log('╔══════════════════════════════════════════════╗');
 console.log('║  BUILD SUMMARY                               ║');
@@ -187,8 +209,8 @@ console.log('║  TO INSTALL:                                 ║');
 console.log('║  1. Open Claude Desktop                      ║');
 console.log('║  2. Settings → Extensions → Install Extension║');
 console.log('║  3. Select the .mcpb file                    ║');
-console.log('║  4. Choose a data folder when prompted       ║');
-console.log('║  5. Open localhost:3456 to see your graph    ║');
+console.log('║  4. Done! Scripture is pre-loaded.            ║');
+console.log('║  5. Open localhost:3457 for the web UI       ║');
 console.log('╚══════════════════════════════════════════════╝');
 
 // Cleanup
